@@ -20,6 +20,8 @@ Responsibilities
 Deployment
 - Vercel (web): project root client. Only NEXT_PUBLIC_API_URL is set.
 - API host (Render or Railway): persistent Node process so the reminder scheduler can run.
+- Build the workspaces independently with `npm run build -w client` and `npm run build -w server`; the root `npm run build` runs both. The API build syntax-checks its Node source (the server runs directly from ESM, with no compilation output).
+- Start the API with `npm run start -w server`; build and start the web app from the client workspace on its web host.
 - MongoDB Atlas: dedicated least-privilege user, IP allow-list.
 - Cookies: app.yourdomain and api.yourdomain are same-site, so httpOnly cookies with SameSite=Lax work.
 - Boot check: the API refuses to start when required variables are missing or malformed. It names the variables, never their values.

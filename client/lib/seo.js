@@ -53,6 +53,7 @@ export function makeDescription(text, max = 160) {
 export function pageMetadata({ lang, path = '', title, description, index = indexable(lang) }) {
   const url = absUrl(lang, path);
   return {
+    metadataBase: new URL(SITE_URL),
     title,
     description,
     alternates: { canonical: url, languages: languageAlternates(path) },
@@ -78,7 +79,7 @@ export function pageMetadata({ lang, path = '', title, description, index = inde
 
 // Private screens: never indexed, never followed.
 export function privateMetadata(title) {
-  return { title: titleWith(title), robots: { index: false, follow: false } };
+  return { metadataBase: new URL(SITE_URL), title: titleWith(title), robots: { index: false, follow: false } };
 }
 
 // Escapes characters that could close the script tag early.

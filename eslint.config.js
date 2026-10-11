@@ -4,9 +4,15 @@ import globals from 'globals';
 // Flat config (ESLint 9). Lints the server, the client's JavaScript, and shared code.
 export default [
   {
-    ignores: ['**/node_modules/**', '**/.next/**', '**/dist/**', '**/coverage/**', 'ml/**', 'docs/**'],
+    ignores: ['**/node_modules/**', '**/.next/**', '**/.next-dev/**', '**/dist/**', '**/coverage/**', 'ml/**', 'docs/**'],
   },
   js.configs.recommended,
+  {
+    files: ['client/public/sw.js'],
+    languageOptions: {
+      globals: globals.serviceworker,
+    },
+  },
   {
     files: ['server/**/*.{js,mjs}', 'client/**/*.{js,mjs}', 'shared/**/*.{js,mjs}', '*.{js,mjs}'],
     languageOptions: {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DICTIONARIES } from '../i18n/dictionaries.js';
-import { titleWith, makeDescription, pageMetadata, privateMetadata, jsonLd, breadcrumbData, languageAlternates, isSafeSlug, indexable, absUrl } from '../lib/seo.js';
+import { titleWith, makeDescription, pageMetadata, privateMetadata, jsonLd, breadcrumbData, languageAlternates, isSafeSlug, indexable, absUrl, SITE_URL } from '../lib/seo.js';
 import { contrast } from '../scripts/contrast-check.mjs';
 import { PALETTE, TEXT_PAIRS } from '../lib/palette.js';
 
@@ -49,6 +49,7 @@ describe('metadata and indexing rules', () => {
 
   it('English pages are indexable, with hreflang only for currently indexable languages', () => {
     const m = pageMetadata({ lang: 'en', path: '/lessons', title: 't', description: 'd' });
+    expect(m.metadataBase.href).toBe(`${SITE_URL}/`);
     expect(m.robots.index).toBe(true);
     expect(m.alternates.languages.en).toMatch(/\/en\/lessons$/);
     expect(m.alternates.languages['bn-BD']).toBeUndefined();
@@ -63,7 +64,9 @@ describe('metadata and indexing rules', () => {
   });
 
   it('private screens are never indexed or followed', () => {
-    expect(privateMetadata('x').robots).toEqual({ index: false, follow: false });
+    const metadata = privateMetadata('x');
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(metadata.metadataBase.href).toBe(`${SITE_URL}/`);
   });
 
   it('language alternates never point crawlers at a noindex language copy', () => {

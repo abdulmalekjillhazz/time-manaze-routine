@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
+    "build": "node scripts/build.js",
     "start": "node src/index.js",
     "test": "vitest run",
     "lessons": "node scripts/lessons.js",
