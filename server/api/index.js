@@ -25,7 +25,20 @@ function boot() {
 }
 
 export default async function handler(req, res) {
-  const { app, config } = boot();
+  // Boot errors (usually missing env vars) used to surface as an opaque Vercel
+  // 500. Return the message as JSON instead — loadEnv only names variables,
+  // never their values, so this is safe to expose.
+  let app;
+  let config;
+  try {
+    ({ app, config } = boot());
+  } catch (err) {
+    console.error(`API boot failed: ${err?.message ?? err}`);
+    res.statusCode = 500;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ success: false, message: err?.message ?? 'Server misconfigured' }));
+    return;
+  }
   try {
     await ensureDb(config.MONGODB_URI, process.env);
   } catch {
