@@ -1,14 +1,18 @@
 import { Upload } from '../models/Upload.js';
 import { Lesson } from '../models/Lesson.js';
+import { Story } from '../models/Story.js';
 import { AppError, MSG } from '../lib/AppError.js';
 import { randomToken } from '../lib/crypto.js';
 import { cloudinary, signParams } from './cloudinary.js';
 
 const FOLDER = 'smart-routine/lessons';
+const STORY_FOLDER = 'smart-routine/stories';
 const MIN = 60 * 1000;
 const SPECS = {
   image: { formats: 'jpg,png,webp', maxBytes: 5 * 1024 * 1024 },
   video: { formats: 'mp4,webm', maxBytes: 50 * 1024 * 1024 },
+  // Voice: stored in Cloudinary as a `video` resource (Cloudinary keeps audio under video).
+  audio: { formats: 'mp3,wav,ogg,m4a,webm', maxBytes: 20 * 1024 * 1024 },
 };
 const ATTACH_WINDOW_MS = 60 * MIN;
 
@@ -16,7 +20,9 @@ const bad = (en, bn) => new AppError(400, 'VALIDATION_FAILED', { en, bn });
 
 // The server chooses the file name and folder. The browser only gets a signature for those exact values.
 export async function createSignature(actor, resourceType) {
-  return createUploadSignature(actor, resourceType, FOLDER);
+  if (!SPECS[resourceType]) throw bad('Unknown media type.', 'অজানা মিডিয়ার ধরন।');
+  // Story voice goes to its own folder; lesson images/video stay where they were.
+  return createUploadSignature(actor, resourceType, resourceType === 'audio' ? STORY_FOLDER : FOLDER);
 }
 
 async function createUploadSignature(actor, resourceType, folder) {
@@ -45,10 +51,18 @@ async function createUploadSignature(actor, resourceType, folder) {
 }
 
 function mediaUrl(cloudName, resourceType, publicId) {
-  return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${publicId}`;
+  // Cloudinary serves audio files through the `video` delivery type.
+  const delivery = resourceType === 'audio' ? 'video' : resourceType;
+  return `https://res.cloudinary.com/${cloudName}/${delivery}/upload/${publicId}`;
+}
+
+// Cloudinary Admin API type for a logical resourceType.
+function cloudType(resourceType) {
+  return resourceType === 'audio' ? 'video' : resourceType;
 }
 
 export async function attachMedia(slug, actor, { publicId, resourceType }) {
+  if (resourceType === 'audio') throw bad('Use story audio upload for voice files.', 'ভয়েস ফাইলের জন্য গল্পের অডিও আপলোড ব্যবহার করুন।');
   const { config, client } = cloudinary();
   const upload = await Upload.findOne({ publicId, uploadedBy: actor._id, status: 'pending' });
   if (!upload) throw new AppError(404, 'NOT_FOUND', MSG.notFound);
@@ -58,14 +72,14 @@ export async function attachMedia(slug, actor, { publicId, resourceType }) {
     throw bad('The upload window has closed. Upload again.', 'আপলোডের সময়সীমা শেষ। আবার আপলোড করুন।');
   }
 
-  const info = await client.resourceInfo(publicId, resourceType);
+  const info = await client.resourceInfo(publicId, cloudType(resourceType));
   if (!info) throw bad('The file was not uploaded.', 'ফাইলটি আপলোড হয়নি।');
 
   const spec = SPECS[resourceType];
   const allowed = spec.formats.split(',');
   if (info.bytes > spec.maxBytes || !allowed.includes(String(info.format).toLowerCase())) {
     // Refuse and remove the file, so a bad upload does not stay in storage.
-    await client.destroy(publicId, resourceType);
+    await client.destroy(publicId, cloudType(resourceType));
     await Upload.updateOne({ _id: upload._id }, { $set: { status: 'deleted', deletedAt: new Date() } });
     throw bad('The file is too large or in the wrong format.', 'ফাইলটি অনেক বড় বা ভুল ধরনের।');
   }
@@ -95,6 +109,56 @@ export async function detachMedia(slug) {
   return lesson;
 }
 
+// Story voice: text stays in MongoDB (Story.body), audio file stays in Cloudinary.
+export async function attachStoryAudio(slug, actor, { publicId }) {
+  const { config, client } = cloudinary();
+  const upload = await Upload.findOne({ publicId, uploadedBy: actor._id, status: 'pending' });
+  if (!upload) throw new AppError(404, 'NOT_FOUND', MSG.notFound);
+  if (upload.resourceType !== 'audio') throw bad('Media type does not match the upload.', 'মিডিয়ার ধরন আপলোডের সাথে মেলেনি।');
+  if (upload.expiresAt < new Date()) {
+    await Upload.updateOne({ _id: upload._id }, { $set: { status: 'orphaned' } });
+    throw bad('The upload window has closed. Upload again.', 'আপলোডের সময়সীমা শেষ। আবার আপলোড করুন।');
+  }
+
+  const info = await client.resourceInfo(publicId, 'video');
+  if (!info) throw bad('The file was not uploaded.', 'ফাইলটি আপলোড হয়নি।');
+  const allowed = SPECS.audio.formats.split(',');
+  if (info.bytes > SPECS.audio.maxBytes || !allowed.includes(String(info.format).toLowerCase())) {
+    await client.destroy(publicId, 'video');
+    await Upload.updateOne({ _id: upload._id }, { $set: { status: 'deleted', deletedAt: new Date() } });
+    throw bad('The file is too large or in the wrong format.', 'ফাইলটি অনেক বড় বা ভুল ধরনের।');
+  }
+
+  const story = await Story.findOne({ slug });
+  if (!story || story.status === 'archived') throw new AppError(404, 'NOT_FOUND', MSG.notFound);
+
+  if (story.audio?.publicId) {
+    await Upload.updateOne({ publicId: story.audio.publicId, status: 'attached' }, { $set: { status: 'orphaned' } });
+  }
+
+  story.audio = {
+    publicId,
+    resourceType: 'audio',
+    url: mediaUrl(config.CLOUDINARY_CLOUD_NAME, 'audio', publicId),
+    bytes: info.bytes ?? null,
+    durationSec: info.duration ?? null,
+  };
+  await story.save();
+  await Upload.updateOne({ _id: upload._id }, { $set: { status: 'attached', attachedTo: `story:${slug}` } });
+  return story;
+}
+
+export async function detachStoryAudio(slug) {
+  const story = await Story.findOne({ slug });
+  if (!story) throw new AppError(404, 'NOT_FOUND', MSG.notFound);
+  if (story.audio?.publicId) {
+    await Upload.updateOne({ publicId: story.audio.publicId, status: 'attached' }, { $set: { status: 'orphaned' } });
+  }
+  story.audio = { publicId: null, resourceType: null, url: null, bytes: null, durationSec: null };
+  await story.save();
+  return story;
+}
+
 // Run on a schedule (or by hand with scripts/cleanup-uploads.js).
 // Pending uploads that were never attached are marked orphaned after their window closes.
 // Orphaned files are destroyed in Cloudinary. A file that fails to delete stays orphaned and is retried next run.
@@ -111,7 +175,8 @@ export async function cleanupUploads({ now = new Date() } = {}) {
   for (const u of orphans) {
     try {
       // 'ok' or 'not found': either way the file is gone.
-      await client.destroy(u.publicId, u.resourceType);
+      // Audio is stored in Cloudinary as `video` type.
+      await client.destroy(u.publicId, cloudType(u.resourceType));
       await Upload.updateOne({ _id: u._id }, { $set: { status: 'deleted', deletedAt: new Date() } });
       deleted += 1;
     } catch {

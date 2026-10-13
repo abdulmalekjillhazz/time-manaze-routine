@@ -8,6 +8,7 @@ export * from './schemas/completions.js';
 export * from './schemas/sync.js';
 export * from './schemas/push.js';
 export * from './schemas/lessons.js';
+export * from './schemas/stories.js';
 export * from './quiz.js';
 export * from './schemas/admin.js';
 export * from './ml.js';

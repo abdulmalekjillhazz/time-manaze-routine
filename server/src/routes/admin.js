@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   lessonDraftSchema,
+  storyDraftSchema,
   roleChangeSchema,
   mfaCodeSchema,
   uploadSignatureSchema,
@@ -16,7 +17,8 @@ import { writeAudit, listAudit } from '../services/audit.js';
 import * as mfa from '../services/mfa.js';
 import { setRole } from '../services/roles.js';
 import { createDraft, submitForReview, publishLesson, archiveLesson, listAllLessons } from '../services/lessons.js';
-import { createSignature, attachMedia, detachMedia, cleanupUploads } from '../services/uploads.js';
+import { createStoryDraft, submitStoryForReview, publishStory, archiveStory, listAllStories } from '../services/stories.js';
+import { createSignature, attachMedia, detachMedia, attachStoryAudio, detachStoryAudio, cleanupUploads } from '../services/uploads.js';
 import { effectiveFlags, setFlag } from '../services/flags.js';
 import { FLAG_DEFAULTS } from '@smart-routine/shared';
 import { AppError, MSG } from '../lib/AppError.js';
@@ -206,6 +208,78 @@ export function adminRouter(config) {
     try {
       const lesson = await detachMedia(req.params.slug);
       await writeAudit({ actor: req.user, action: 'media.detach', targetType: 'lesson', targetId: lesson._id, summary: `slug=${lesson.slug}`, requestId: req.id });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Stories: text in MongoDB, voice in Cloudinary.
+  r.get('/stories', requireRole('viewer', 'editor', 'owner'), async (_req, res, next) => {
+    try {
+      const stories = await listAllStories();
+      res.json({ stories: stories.map((s) => ({ id: String(s._id), slug: s.slug, status: s.status, createdAt: s.createdAt })) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.post('/stories', requireRole('editor', 'owner'), validate({ body: storyDraftSchema }), async (req, res, next) => {
+    try {
+      const story = await createStoryDraft(req.user, req.body);
+      await writeAudit({ actor: req.user, action: 'story.create', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
+      res.status(201).json({ story: { id: String(story._id), slug: story.slug, status: story.status } });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.post('/stories/:slug/submit', requireRole('editor', 'owner'), async (req, res, next) => {
+    try {
+      const story = await submitStoryForReview(req.params.slug, req.user);
+      await writeAudit({ actor: req.user, action: 'story.submit', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
+      res.json({ story: { slug: story.slug, status: story.status } });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.post('/stories/:slug/publish', requireRole('editor', 'owner'), async (req, res, next) => {
+    try {
+      const story = await publishStory(req.params.slug, req.user);
+      await writeAudit({ actor: req.user, action: 'story.publish', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
+      res.json({ story: { slug: story.slug, status: story.status } });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.post('/stories/:slug/archive', requireRole('owner'), async (req, res, next) => {
+    try {
+      const story = await archiveStory(req.params.slug);
+      await detachStoryAudio(story.slug);
+      await writeAudit({ actor: req.user, action: 'story.archive', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
+      res.json({ story: { slug: story.slug, status: story.status } });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.post('/stories/:slug/audio', requireRole('editor', 'owner'), requireCloudinary, validate({ body: attachMediaSchema }), async (req, res, next) => {
+    try {
+      if (req.body.resourceType !== 'audio') throw new AppError(400, 'VALIDATION_FAILED', MSG.invalid, [{ path: 'resourceType', message: 'must be audio' }]);
+      const story = await attachStoryAudio(req.params.slug, req.user, req.body);
+      await writeAudit({ actor: req.user, action: 'story.audio.attach', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
+      res.json({ story: { slug: story.slug, audio: { url: story.audio.url } } });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  r.delete('/stories/:slug/audio', requireRole('editor', 'owner'), async (req, res, next) => {
+    try {
+      const story = await detachStoryAudio(req.params.slug);
+      await writeAudit({ actor: req.user, action: 'story.audio.detach', targetType: 'story', targetId: story._id, summary: `slug=${story.slug}`, requestId: req.id });
       res.json({ ok: true });
     } catch (err) {
       next(err);

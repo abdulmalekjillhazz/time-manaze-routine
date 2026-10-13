@@ -7,7 +7,7 @@ const { Schema } = mongoose;
 const uploadSchema = new Schema(
   {
     publicId: { type: String, required: true, unique: true },
-    resourceType: { type: String, enum: ['image', 'video'], required: true },
+    resourceType: { type: String, enum: ['image', 'video', 'audio'], required: true },
     status: { type: String, enum: ['pending', 'attached', 'orphaned', 'deleted'], default: 'pending', index: true },
     uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     attachedTo: { type: String, default: null },

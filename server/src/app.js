@@ -15,6 +15,7 @@ import { completionsRouter } from './routes/completions.js';
 import { syncRouter } from './routes/sync.js';
 import { pushRouter } from './routes/push.js';
 import { lessonsRouter } from './routes/lessons.js';
+import { storiesRouter } from './routes/stories.js';
 import { adminRouter } from './routes/admin.js';
 import { modelRouter } from './routes/model.js';
 import { healthRouter } from './routes/health.js';
@@ -63,6 +64,7 @@ export function createApp({ config }) {
   app.use('/api/sync', syncRouter());
   app.use('/api/push', pushRouter(config));
   app.use('/api/lessons', lessonsRouter());
+  app.use('/api/stories', storiesRouter());
   app.use('/api/admin', adminRouter(config));
   app.use('/api/model', modelRouter());
   app.use('/api/flags', flagsRouter());
