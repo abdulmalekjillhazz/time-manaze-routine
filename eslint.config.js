@@ -14,7 +14,7 @@ export default [
     },
   },
   {
-    files: ['server/**/*.{js,mjs}', 'client/**/*.{js,mjs}', 'shared/**/*.{js,mjs}', '*.{js,mjs}'],
+    files: ['server/**/*.{js,mjs}', 'client/**/*.{js,mjs}', 'shared/**/*.{js,mjs}', 'api/**/*.{js,mjs}', '*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
